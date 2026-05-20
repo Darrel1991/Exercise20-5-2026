@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flood Analysis Dashboard</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <style>
+        #flood-map { height: 100%; width: 100%; z-index: 1; }
+        .stat-card { transition: all 0.2s; }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .risk-high { color: #ef4444; }
+        .risk-moderate { color: #f59e0b; }
+        .risk-low { color: #22c55e; }
+        .tab-active { background-color: #2563eb; color: white; }
+        .tab-inactive { background-color: #374151; color: #9ca3af; }
+        .tab-inactive:hover { background-color: #4b5563; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+
+        /* Draggable resize handle between charts and map */
+        #map-drag-handle {
+            width: 8px;
+            cursor: col-resize;
+            background: #374151;
+            transition: background 0.2s;
+            flex-shrink: 0;
+            align-self: stretch;
+            position: relative;
+        }
+        #map-drag-handle::after {
+            content: "⋮";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #9ca3af;
+            font-size: 14px;
+            pointer-events: none;
+        }
+        #map-drag-handle:hover, #map-drag-handle.dragging {
+            background: #2563eb;
+        }
+        #map-drag-handle:hover::after, #map-drag-handle.dragging::after {
+            color: #fff;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white m-0 p-0 h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+            <a href="/" class="text-gray-400 hover:text-white text-sm mr-2">&larr; Main Dashboard</a>
+            <h1 class="text-lg font-bold text-cyan-400">Flood Analysis Dashboard</h1>
+            <span class="text-xs text-gray-400">Historical Precipitation &amp; Risk Assessment</span>
+        </div>
+        <div class="flex items-center gap-2 text-sm">
+            <span id="status-text" class="text-gray-400 text-xs">Ready</span>
+        </div>
+    </header>
+
+    <!-- Main content -->
+    <div class="flex flex-1 overflow-hidden">
+
+        <!-- Left Sidebar: Controls & KPIs -->
+        <aside class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col overflow-y-auto shrink-0">
+
+            <!-- Location & Date Controls -->
+            <div class="p-3 border-b border-gray-700">
+                <label class="text-xs text-gray-400 block mb-1">Location</label>
+                <select id="location-select" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm mb-2">
+                    <option value="">Loading locations...</option>
+                </select>
+
+                <div class="grid grid-cols-2 gap-2 mb-2">
+                    <div>
+                        <label class="text-xs text-gray-400 block mb-1">Start Date</label>
+                        <input type="date" id="start-date" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm" value="2021-01-01">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400 block mb-1">End Date</label>
+                        <input type="date" id="end-date" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm">
+                    </div>
+                </div>
+
+                <button id="analyze-btn" class="w-full bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-semibold py-2 rounded transition">
+                    Analyze Flood Risk
+                </button>
+            </div>
+
+            <!-- Risk Score KPIs -->
+            <div class="p-3 border-b border-gray-700">
+                <h3 class="text-xs font-semibold text-gray-400 uppercase mb-2">Risk Assessment</h3>
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="stat-card bg-gray-700 rounded-lg p-3 text-center col-span-2">
+                        <div id="kpi-risk-score" class="text-3xl font-bold text-gray-500">--</div>
+                        <div id="kpi-risk-level" class="text-xs text-gray-400">Risk Score</div>
+                    </div>
+                    <div class="stat-card bg-gray-700 rounded-lg p-3 text-center">
+                        <div id="kpi-total-rain" class="text-xl font-bold text-cyan-400">--</div>
+                        <div class="text-xs text-gray-400">Total Rain (mm)</div>
+                    </div>
+                    <div class="stat-card bg-gray-700 rounded-lg p-3 text-center">
+                        <div id="kpi-avg-daily" class="text-xl font-bold text-blue-400">--</div>
+                        <div class="text-xs text-gray-400">Avg Daily (mm)</div>
+                    </div>
+                    <div class="stat-card bg-gray-700 rounded-lg p-3 text-center">
+                        <div id="kpi-heavy-days" class="text-xl font-bold text-yellow-400">--</div>
+                        <div class="text-xs text-gray-400">Heavy Rain Days</div>
+                    </div>
+                    <div class="stat-card bg-gray-700 rounded-lg p-3 text-center">
+                        <div id="kpi-extreme-days" class="text-xl font-bold text-red-400">--</div>
+                        <div class="text-xs text-gray-400">Extreme Days</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Monsoon Analysis -->
+            <div class="p-3 border-b border-gray-700">
+                <h3 class="text-xs font-semibold text-gray-400 uppercase mb-2">Monsoon Analysis</h3>
+                <div class="bg-gray-700 rounded-lg p-2" style="height: 140px;">
+                    <canvas id="monsoon-chart"></canvas>
+                </div>
+                <div class="mt-2 text-xs text-gray-400">
+                    <div class="flex justify-between">
+                        <span>NE Monsoon (Nov-Mar):</span>
+                        <span id="monsoon-ne" class="text-cyan-400">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Non-Monsoon:</span>
+                        <span id="monsoon-other" class="text-gray-300">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Extreme Events -->
+            <div class="p-3 flex-1">
+                <h3 class="text-xs font-semibold text-red-400 uppercase mb-2">Extreme Rainfall Events</h3>
+                <div id="extreme-events-list" class="space-y-1 max-h-64 overflow-y-auto text-sm">
+                    <div class="text-gray-500 text-xs">Run analysis to see events</div>
+                </div>
+            </div>
+
+            <!-- Compare Section -->
+            <div class="p-3 border-t border-gray-700">
+                <h3 class="text-xs font-semibold text-gray-400 uppercase mb-2">Compare Locations</h3>
+                <select id="compare-select" multiple class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs h-20 mb-2">
+                </select>
+                <div class="text-xs text-gray-500 mb-2">Hold Ctrl to select multiple</div>
+                <button id="compare-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold py-1.5 rounded transition">
+                    Compare Selected
+                </button>
+            </div>
+        </aside>
+
+        <!-- Center: Charts -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+
+            <!-- Tab bar -->
+            <div class="bg-gray-800 border-b border-gray-700 px-4 py-2 flex gap-2 shrink-0">
+                <button data-tab="precipitation" class="tab-btn tab-active text-xs px-3 py-1 rounded transition">Precipitation</button>
+                <button data-tab="monthly" class="tab-btn tab-inactive text-xs px-3 py-1 rounded transition">Monthly</button>
+                <button data-tab="yearly" class="tab-btn tab-inactive text-xs px-3 py-1 rounded transition">Yearly</button>
+                <button data-tab="consecutive" class="tab-btn tab-inactive text-xs px-3 py-1 rounded transition">Consecutive Rain</button>
+                <button data-tab="river" class="tab-btn tab-inactive text-xs px-3 py-1 rounded transition">River Discharge</button>
+                <button data-tab="compare" class="tab-btn tab-inactive text-xs px-3 py-1 rounded transition">Compare</button>
+                <button data-tab="demand" class="tab-btn tab-inactive text-xs px-3 py-1 rounded transition">Flood Analysis</button>
+            </div>
+
+            <!-- Chart panels -->
+            <div class="flex-1 p-4 overflow-y-auto">
+                <!-- Daily precipitation -->
+                <div id="panel-precipitation" class="tab-panel h-full">
+                    <div class="bg-gray-800 rounded-lg p-4 h-full">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-2">Daily Precipitation (mm)</h3>
+                        <div style="height: calc(100% - 30px);">
+                            <canvas id="precip-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Monthly totals -->
+                <div id="panel-monthly" class="tab-panel h-full hidden">
+                    <div class="bg-gray-800 rounded-lg p-4 h-full">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-2">Monthly Precipitation Totals (mm)</h3>
+                        <div style="height: calc(100% - 30px);">
+                            <canvas id="monthly-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Yearly totals -->
+                <div id="panel-yearly" class="tab-panel h-full hidden">
+                    <div class="bg-gray-800 rounded-lg p-4 h-full">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-2">Yearly Precipitation Totals (mm)</h3>
+                        <div style="height: calc(100% - 30px);">
+                            <canvas id="yearly-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Consecutive rain periods -->
+                <div id="panel-consecutive" class="tab-panel hidden">
+                    <div class="bg-gray-800 rounded-lg p-4">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-3">Consecutive Rain Periods (3+ days)</h3>
+                        <div id="consecutive-table" class="overflow-x-auto">
+                            <div class="text-gray-500 text-sm">Run analysis to see data</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- River discharge -->
+                <div id="panel-river" class="tab-panel h-full hidden">
+                    <div class="bg-gray-800 rounded-lg p-4 h-full">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-2">River Discharge (m³/s)</h3>
+                        <div style="height: calc(100% - 30px);">
+                            <canvas id="river-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Compare -->
+                <div id="panel-compare" class="tab-panel hidden">
+                    <div class="bg-gray-800 rounded-lg p-4 mb-4">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-3">Location Comparison</h3>
+                        <div style="height: 300px;">
+                            <canvas id="compare-chart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-4">
+                        <div id="compare-table" class="overflow-x-auto">
+                            <div class="text-gray-500 text-sm">Select locations and click Compare</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Flood Analysis / Demand Point -->
+                <div id="panel-demand" class="tab-panel hidden">
+                    <div class="bg-gray-800 rounded-lg p-4 mb-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-semibold text-gray-300">Flood Analysis — Flood Risk Assessment</h3>
+                            <button id="place-point-btn" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded transition">
+                                Click Map to Place Point
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-400 mb-3">
+                            Click anywhere on the map to place a demand point. The system will analyze
+                            historical precipitation data and assess flood risk at that location.
+                        </p>
+
+                        <!-- Demand point controls -->
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <div>
+                                <label class="text-xs text-gray-400 block mb-1">Latitude</label>
+                                <input type="number" step="0.0001" id="demand-lat" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm" placeholder="e.g. 3.14">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-400 block mb-1">Longitude</label>
+                                <input type="number" step="0.0001" id="demand-lng" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm" placeholder="e.g. 101.69">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 mb-3">
+                            <div>
+                                <label class="text-xs text-gray-400 block mb-1">Start Date</label>
+                                <input type="date" id="demand-start" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm" value="2019-01-01">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-400 block mb-1">End Date</label>
+                                <input type="date" id="demand-end" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm">
+                            </div>
+                        </div>
+                        <button id="demand-analyze-btn" class="w-full bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-semibold py-2 rounded transition">
+                            Analyze This Location
+                        </button>
+                    </div>
+
+                    <!-- Demand point result -->
+                    <div id="demand-result" class="hidden">
+                        <!-- Risk verdict -->
+                        <div id="demand-verdict" class="bg-gray-800 rounded-lg p-4 mb-4">
+                        </div>
+
+                        <!-- Demand precipitation chart -->
+                        <div class="bg-gray-800 rounded-lg p-4 mb-4">
+                            <h3 class="text-sm font-semibold text-gray-300 mb-2">Monthly Precipitation at Site</h3>
+                            <div style="height: 250px;">
+                                <canvas id="demand-monthly-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Demand yearly chart -->
+                        <div class="bg-gray-800 rounded-lg p-4 mb-4">
+                            <h3 class="text-sm font-semibold text-gray-300 mb-2">Yearly Precipitation</h3>
+                            <div style="height: 200px;">
+                                <canvas id="demand-yearly-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Nearby comparison -->
+                        <div class="bg-gray-800 rounded-lg p-4 mb-4">
+                            <h3 class="text-sm font-semibold text-gray-300 mb-2">Nearby Flood Monitoring Stations</h3>
+                            <div id="demand-nearby" class="overflow-x-auto">
+                            </div>
+                        </div>
+
+                        <!-- Consecutive rain periods -->
+                        <div class="bg-gray-800 rounded-lg p-4">
+                            <h3 class="text-sm font-semibold text-gray-300 mb-2">Sustained Rain Periods at Site</h3>
+                            <div id="demand-consecutive" class="overflow-x-auto">
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- Drag handle to resize map -->
+        <div id="map-drag-handle" title="Drag to resize map"></div>
+
+        <!-- Right: Map -->
+        <div id="map-panel" class="border-l border-gray-700 flex flex-col shrink-0" style="width: 500px; min-width: 300px; max-width: 70vw;">
+            <div class="bg-gray-800 px-3 py-2 border-b border-gray-700 flex items-center justify-between">
+                <h3 class="text-xs font-semibold text-gray-400 uppercase">Flood Monitoring Locations</h3>
+                <div class="flex gap-2">
+                    <button onclick="zoomToTrainStations()" class="text-xs bg-blue-700 hover:bg-blue-600 text-white px-2 py-1 rounded transition">
+                        🚆 Zoom to Stations
+                    </button>
+                    <button id="satellite-toggle-btn" onclick="toggleSatellite()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-1 rounded transition">
+                        🗺 Street Map
+                    </button>
+                </div>
+            </div>
+            <div class="flex-1 relative">
+                <div id="flood-map" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/flood.js"></script>
+</body>
+</html>

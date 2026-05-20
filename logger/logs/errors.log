@@ -1,0 +1,7 @@
+[2026-05-12 06:25:44 UTC] | LEVEL: INFO | SERVICE: General | USER: darrel.low@redplanet.com.my | MESSAGE: Pipeline started
+[2026-05-12 06:25:44 UTC] | LEVEL: ERROR | SERVICE: Zoho | USER: darrel.low@redplanet.com.my | MESSAGE: Token refresh failed - 401 Unauthorized
+[2026-05-12 06:25:44 UTC] | LEVEL: WARNING | SERVICE: GitHub | USER: darrel.low@redplanet.com.my | MESSAGE: Rate limit approaching - 10 requests remaining
+[2026-05-12 06:26:44 UTC] | LEVEL: ERROR | SERVICE: Python | USER: darrel.low@redplanet.com.my | MESSAGE: IndexError: list index out of range
+  TRACE: File app.py line 42 in process_data
+  return data[index]
+IndexError: list index out of range

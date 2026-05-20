@@ -1,0 +1,26 @@
+# Credentials — never commit these
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Logs — keep structure but not content
+logs/errors.log
+logs/audit.log
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

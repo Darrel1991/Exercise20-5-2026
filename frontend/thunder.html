@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thunderstorm Analysis — Train Stations</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <style>
+        #thunder-map { height: 100%; width: 100%; z-index: 1; }
+        .stat-card { transition: all 0.2s; }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .risk-high { color: #ef4444; }
+        .risk-moderate { color: #f59e0b; }
+        .risk-low { color: #22c55e; }
+        .severity-critical { background: #7f1d1d; color: #fca5a5; }
+        .severity-severe { background: #78350f; color: #fde68a; }
+        .severity-moderate { background: #1e3a5f; color: #93c5fd; }
+        .tab-active { background-color: #7c3aed; color: white; }
+        .tab-inactive { background-color: #374151; color: #9ca3af; }
+        .tab-inactive:hover { background-color: #4b5563; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+
+        #map-drag-handle {
+            width: 8px;
+            cursor: col-resize;
+            background: #374151;
+            transition: background 0.2s;
+            flex-shrink: 0;
+            align-self: stretch;
+            position: relative;
+        }
+        #map-drag-handle::after {
+            content: "\u22EE";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #9ca3af;
+            font-size: 14px;
+            pointer-events: none;
+        }
+        #map-drag-handle:hover, #map-drag-handle.dragging { background: #7c3aed; }
+        #map-drag-handle:hover::after, #map-drag-handle.dragging::after { color: #fff; }
+
+        .heatmap-cell {
+            min-width: 56px; padding: 3px 4px;
+            display: inline-flex; align-items: center; justify-content: center;
+            gap: 3px; flex-wrap: wrap;
+            font-size: 10px; border-radius: 3px; margin: 1px;
+            line-height: 1.3;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white m-0 p-0 h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+            <a href="/" class="text-gray-400 hover:text-white text-sm mr-2">&larr; Main Dashboard</a>
+            <h1 class="text-lg font-bold text-purple-400">Thunderstorm Analysis</h1>
+            <span class="text-xs text-gray-400">Train Station Fault Risk Assessment</span>
+        </div>
+        <div class="flex items-center gap-2 text-sm">
+            <span id="status-text" class="text-gray-400 text-xs">Ready</span>
+        </div>
+    </header>
+
+    <!-- Main content -->
+    <div class="flex flex-1 overflow-hidden">
+
+        <!-- Left Sidebar -->
+        <aside class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col overflow-y-auto shrink-0">
+
+            <!-- Station & Date Controls -->
+            <div class="p-3 border-b border-gray-700">
+                <label class="text-xs text-gray-400 block mb-1">Train Line</label>
+                <select id="line-select" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm mb-2">
+                    <option value="">Loading lines...</option>
+                </select>
+
+                <label class="text-xs text-gray-400 block mb-1">Station</label>
+                <select id="station-select" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm mb-2">
+                    <option value="">-- Select a line first --</option>
+                </select>
+
+                <div class="grid grid-cols-2 gap-2 mb-2">
+                    <div>
+                        <label class="text-xs text-gray-400 block mb-1">Start Date</label>
+                        <input type="date" id="start-date" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm" value="2026-01-01">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400 block mb-1">End Date</label>
+                        <input type="date" id="end-date" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm">
+                    </div>
+                </div>
+
+                <button id="analyze-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold py-2 rounded transition">
+                    Analyze Thunderstorm Risk
+                </button>
+            </div>
+
+            <!-- KPIs -->
+            <div class="p-3 border-b border-gray-700">
+                <h3 class="text-xs font-semibold text-gray-400 uppercase mb-2">Risk Assessment</h3>
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="stat-card bg-gray-700 rounded-lg p-3 text-center col-span-2">
+                        <div id="kpi-risk-score" class="text-3xl font-bold text-gray-500">--</div>
+                        <div id="kpi-risk-level" class="text-xs text-gray-400">Storm Risk Score</div>
+                    </div>
+                    <div class="stat-card bg-gray-700 rounded-lg p-3 text-center">
+                        <div id="kpi-storm-days" class="text-xl font-bold text-purple-400">--</div>
+                        <div class="text-xs text-gray-400">Storm Days</div>
+                    </div>
+                    <div class="stat-card bg-gray-700 rounded-lg p-3 text-center">
+                        <div id="kpi-severe-gusts" class="text-xl font-bold text-red-400">--</div>
+                        <div class="text-xs text-gray-400">Storm Hours</div>
+                    </div>
+                    <div class="stat-card bg-gray-700 rounded-lg p-3 text-center">
+                        <div id="kpi-heavy-rain" class="text-xl font-bold text-cyan-400">--</div>
+                        <div class="text-xs text-gray-400">Peak Rain (mm/h)</div>
+                    </div>
+                    <div class="stat-card bg-gray-700 rounded-lg p-3 text-center">
+                        <div id="kpi-peak-month" class="text-xl font-bold text-yellow-400">--</div>
+                        <div class="text-xs text-gray-400">Peak Storm Month</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Storm Severity Breakdown -->
+            <div class="p-3 border-b border-gray-700">
+                <h3 class="text-xs font-semibold text-gray-400 uppercase mb-2">Severity Breakdown</h3>
+                <div class="bg-gray-700 rounded-lg p-2" style="height: 140px;">
+                    <canvas id="severity-chart"></canvas>
+                </div>
+                <div class="mt-2 text-xs text-gray-400">
+                    <div class="flex justify-between">
+                        <span>Max Gust:</span>
+                        <span id="kpi-combined" class="text-orange-400">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Total Storm Hours:</span>
+                        <span id="kpi-extreme-rain" class="text-red-400">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Worst Events -->
+            <div class="p-3 flex-1">
+                <h3 class="text-xs font-semibold text-red-400 uppercase mb-2">Critical Storm Events</h3>
+                <div id="critical-events-list" class="space-y-1 max-h-64 overflow-y-auto text-sm">
+                    <div class="text-gray-500 text-xs">Run analysis to see events</div>
+                </div>
+            </div>
+
+            <!-- Compare All -->
+            <div class="p-3 border-t border-gray-700">
+                <button id="compare-btn" class="w-full bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold py-1.5 rounded transition hidden">
+                    Compare All Stations
+                </button>
+            </div>
+        </aside>
+
+        <!-- Center: Charts -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+
+            <!-- Tab bar -->
+            <div class="bg-gray-800 border-b border-gray-700 px-4 py-2 flex gap-2 shrink-0">
+                <button data-tab="daily" class="tab-btn tab-inactive text-xs px-3 py-1 rounded transition">Daily</button>
+                <button data-tab="monthly" class="tab-btn tab-inactive text-xs px-3 py-1 rounded transition">Monthly</button>
+                <button data-tab="heatmap" class="tab-btn tab-inactive text-xs px-3 py-1 rounded transition">Storms History</button>
+                <button data-tab="forecast" class="tab-btn tab-inactive text-xs px-3 py-1 rounded transition">Forecast</button>
+            </div>
+
+            <!-- Panels -->
+            <div class="flex-1 p-4 overflow-y-auto">
+
+                <!-- Overview -->
+                <div id="panel-overview" class="tab-panel">
+                    <div class="bg-gray-800 rounded-lg p-4 mb-4">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-3">Station Risk Ranking</h3>
+                     
+                    </div>
+                </div>
+
+                <!-- Daily -->
+                <div id="panel-daily" class="tab-panel h-full hidden">
+                    <div class="bg-gray-800 rounded-lg p-4 mb-4" style="height: 45%;">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-2">Daily Precipitation (mm) &amp; Thunderstorm Days</h3>
+                        <div style="height: calc(100% - 30px);">
+                            <canvas id="daily-precip-chart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-4" style="height: 45%;">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-2">Daily Wind Gusts (km/h)</h3>
+                        <div style="height: calc(100% - 30px);">
+                            <canvas id="daily-gust-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Monthly -->
+                <div id="panel-monthly" class="tab-panel h-full hidden">
+                    <div class="bg-gray-800 rounded-lg p-4 h-full">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-2">Monthly Thunderstorm Days &amp; Rainfall</h3>
+                        <div style="height: calc(100% - 30px);">
+                            <canvas id="monthly-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Storms table -->
+                <div id="panel-storms" class="tab-panel hidden">
+                    <div class="bg-gray-800 rounded-lg p-4">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-3">Thunderstorm Events Log</h3>
+                        <div id="storms-table" class="overflow-x-auto">
+                            <div class="text-gray-500 text-sm">Run analysis to see storm events</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Compare -->
+                <div id="panel-compare" class="tab-panel hidden">
+                    <div class="bg-gray-800 rounded-lg p-4 mb-4">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-3">Station Comparison — Risk Scores</h3>
+                        <div style="height: 350px;">
+                            <canvas id="compare-chart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-4">
+                        <div id="compare-table" class="overflow-x-auto hidden">
+                            <div class="text-gray-500 text-sm">Click "Compare All Stations" to see data</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Heatmap -->
+                <div id="panel-heatmap" class="tab-panel hidden">
+                    <div class="bg-gray-800 rounded-lg p-4 mb-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-semibold text-gray-300">Weather Analysis — Month vs Year</h3>
+                            <span class="text-xs text-gray-500">Click a month cell to view daily detail</span>
+                        </div>
+                        <div id="heatmap-container" class="overflow-x-auto">
+                            <div class="text-gray-500 text-sm">Run analysis to see heatmap</div>
+                        </div>
+                    </div>
+
+                    <!-- Daily detail for selected month -->
+                    <div id="heatmap-detail" class="bg-gray-800 rounded-lg p-4 hidden">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 id="heatmap-detail-title" class="text-sm font-semibold text-gray-300">Daily Breakdown</h3>
+                            <button onclick="exportDetailToExcel()" class="text-xs bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded transition">
+                                Export to Excel
+                            </button>
+                        </div>
+                        <div id="heatmap-detail-table" class="overflow-x-auto"></div>
+                    </div>
+                </div>
+
+                <!-- Forecast -->
+                <div id="panel-forecast" class="tab-panel hidden">
+                    <div class="bg-gray-800 rounded-lg p-4 mb-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-semibold text-gray-300">16-Day Weather Forecast</h3>
+                            <div class="flex gap-2">
+                                <button onclick="loadForecast()" class="text-xs bg-purple-700 hover:bg-purple-600 text-white px-3 py-1.5 rounded transition">
+                                    Refresh Forecast
+                                </button>
+                                <button onclick="exportForecastToExcel()" class="text-xs bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded transition">
+                                    Export to Excel
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500 mb-3">
+                            Select a station and click Refresh, or switch to this tab after selecting a station.
+                            Forecast uses WMO weather codes — thunderstorms (WMO 95/96/99) are detected directly.
+                        </p>
+                        <div id="forecast-summary" class="grid grid-cols-4 gap-2 mb-4 hidden">
+                            <div class="stat-card bg-gray-700 rounded-lg p-2 text-center">
+                                <div id="fc-storm-days" class="text-xl font-bold text-purple-400">--</div>
+                                <div class="text-xs text-gray-400">Storm Days</div>
+                            </div>
+                            <div class="stat-card bg-gray-700 rounded-lg p-2 text-center">
+                                <div id="fc-max-rain" class="text-xl font-bold text-cyan-400">--</div>
+                                <div class="text-xs text-gray-400">Max Rain (mm)</div>
+                            </div>
+                            <div class="stat-card bg-gray-700 rounded-lg p-2 text-center">
+                                <div id="fc-max-gust" class="text-xl font-bold text-red-400">--</div>
+                                <div class="text-xs text-gray-400">Max Gust (km/h)</div>
+                            </div>
+                            <div class="stat-card bg-gray-700 rounded-lg p-2 text-center">
+                                <div id="fc-max-prob" class="text-xl font-bold text-yellow-400">--</div>
+                                <div class="text-xs text-gray-400">Max Rain Prob %</div>
+                            </div>
+                        </div>
+                        <div id="forecast-table" class="overflow-x-auto">
+                            <div class="text-gray-500 text-sm">Select a station to load forecast</div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-800 rounded-lg p-4">
+                        <h3 class="text-sm font-semibold text-gray-300 mb-2">Forecast — Rain &amp; Gusts</h3>
+                        <div style="height: 250px;">
+                            <canvas id="forecast-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Drag handle -->
+        <div id="map-drag-handle" title="Drag to resize map"></div>
+
+        <!-- Right: Map -->
+        <div id="map-panel" class="border-l border-gray-700 flex flex-col shrink-0" style="width: 500px; min-width: 300px; max-width: 70vw;">
+            <div class="bg-gray-800 px-3 py-2 border-b border-gray-700 flex items-center justify-between">
+                <h3 class="text-xs font-semibold text-gray-400 uppercase">Train Stations</h3>
+                <div class="flex gap-2">
+                    <button onclick="zoomToStations()" class="text-xs bg-purple-700 hover:bg-purple-600 text-white px-2 py-1 rounded transition">
+                        Zoom to Line
+                    </button>
+                    <button id="satellite-toggle-btn" onclick="toggleSatellite()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-1 rounded transition">
+                        🗺 Street Map
+                    </button>
+                </div>
+            </div>
+            <div class="flex-1 relative">
+                <div id="thunder-map" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>window.__TS_VER = Date.now();</script>
+    <script src="/static/thunder.js?v=20260421"></script>
+</body>
+</html>

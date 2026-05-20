@@ -1,0 +1,51 @@
+# AiPipeline — Client Configuration
+# Add a new client block here when onboarding a new project.
+# No code changes needed — just add the client and run /pipeline_review
+
+clients:
+
+  KTMB:
+    name: "KTMB - Object Detection System (ODS)"
+    zoho_project_id: "TBD"        # Get from Zoho Projects URL
+    zoho_project_name: "KTMB - Object Detection System (ODS)"
+    agents:
+      - architect
+      - security
+      - qc
+      - tester
+    classification: CONFIDENTIAL
+    description: "Drone-based object detection system for KTMB railway infrastructure"
+
+  TNB:
+    name: "TNB Mobile GIS"
+    zoho_project_id: "1234245000000191153"
+    zoho_project_name: "TNB Mobile GIS"
+    agents:
+      - architect
+      - security
+      - qc
+      - tester
+      - sysanalyst
+    classification: CONFIDENTIAL
+    description: "GIS mobile application for TNB field operations"
+
+  NEW_CLIENT:
+    name: "TBD - New Project"
+    zoho_project_id: "TBD"        # Fill in after Zoho project is created
+    zoho_project_name: "TBD"
+    agents:
+      - sysanalyst
+      - architect
+      - security
+      - qc
+      - tester
+    classification: CONFIDENTIAL
+    description: "Placeholder for new client project"
+
+# ─── How to add a new client ─────────────────────────────────────────────────
+# 1. Copy the NEW_CLIENT block above
+# 2. Replace NEW_CLIENT with your client code (e.g. PETRONAS)
+# 3. Fill in name, zoho_project_id, zoho_project_name, description
+# 4. Choose which agents to run for this client
+# 5. Save this file — no restart needed
+# 6. Run: /pipeline_review "client=PETRONAS subject=your review topic"

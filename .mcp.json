@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      },
+      "description": "GitHub — PRs, issues, code review, repository actions",
+      "allowedAgents": ["code"]
+    },
+
+    "google-workspace": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-gdrive"],
+      "env": {
+        "GDRIVE_CLIENT_ID": "${GOOGLE_CLIENT_ID}",
+        "GDRIVE_CLIENT_SECRET": "${GOOGLE_CLIENT_SECRET}",
+        "GDRIVE_REFRESH_TOKEN": "${GOOGLE_REFRESH_TOKEN}"
+      },
+      "description": "Google Workspace — Gmail, Drive, Docs, Sheets",
+      "allowedAgents": ["research", "document", "comms"]
+    },
+
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./"],
+      "description": "Local filesystem — read/write pipeline files and logs",
+      "allowedAgents": ["research", "document", "code", "comms"]
+    }
+
+  }
+}
